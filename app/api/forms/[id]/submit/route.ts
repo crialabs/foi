@@ -1,18 +1,20 @@
+import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { getDb } from "@/lib/db"
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
-  let db = null
   try {
     const { id } = params
     const body = await request.json()
-
-    db = await getDb()
+    const supabase = createServerSupabaseClient()
 
     // Check if form exists and is published
-    const form = await db.get("SELECT id, published FROM forms WHERE id = ?", [id])
+    const { data: form, error: formError } = await supabase
+      .from('forms')
+      .select('id, published')
+      .eq('id', id)
+      .single()
 
-    if (!form) {
+    if (formError || !form) {
       return NextResponse.json({ error: "Form not found" }, { status: 404 })
     }
 
@@ -20,32 +22,62 @@ export async function POST(request: Request, { params }: { params: { id: string 
       return NextResponse.json({ error: "Form is not published" }, { status: 400 })
     }
 
-    // Save submission
-    await db.run("INSERT INTO form_submissions (form_id, data) VALUES (?, ?)", [id, JSON.stringify(body)])
+    // Create the submission
+    const { data: submission, error: submissionError } = await supabase
+      .from('form_submissions')
+      .insert({
+        form_id: id,
+        answers: body.answers || {},
+        metadata: {
+          userAgent: request.headers.get('user-agent'),
+          ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip'),
+        }
+      })
+      .select()
+      .single()
 
-    // If this is a quiz submission with prize wheel, also save to users table
-    if (body.name && body.email && body.whatsapp) {
-      try {
-        await db.run("INSERT INTO users (name, age, supplements, email, whatsapp) VALUES (?, ?, ?, ?, ?)", [
-          body.name,
-          body.age || "",
-          Array.isArray(body.supplements) ? body.supplements.join(",") : body.supplements || "",
-          body.email,
-          body.whatsapp,
-        ])
-      } catch (e) {
-        // Ignore duplicate email errors
-        console.log("User may already exist:", e)
+    if (submissionError) {
+      console.error("Error creating submission:", submissionError)
+      return NextResponse.json({ error: "Failed to submit form" }, { status: 500 })
+    }
+
+    // If this is a quiz submission and there are prize-related fields
+    if (body.prize) {
+      const { error: prizeError } = await supabase
+        .from('quiz_submissions')
+        .insert({
+          submission_id: submission.id,
+          prize_id: body.prize.id,
+          status: 'pending'
+        })
+
+      if (prizeError) {
+        console.error("Error recording prize:", prizeError)
       }
     }
 
-    return NextResponse.json({ success: true, message: "Form submitted successfully" })
+    // Create lead record if contact information is provided
+    if (body.email || body.whatsapp) {
+      const { error: leadError } = await supabase
+        .from('leads')
+        .insert({
+          email: body.email,
+          whatsapp: body.whatsapp,
+          age: body.age,
+          supplements: body.supplements,
+          submission_id: submission.id,
+          form_id: id,
+          status: 'new'
+        })
+
+      if (leadError) {
+        console.error("Error creating lead:", leadError)
+      }
+    }
+
+    return NextResponse.json({ success: true, data: submission })
   } catch (error) {
     console.error("Error submitting form:", error)
-    return NextResponse.json({ error: "Failed to submit form" }, { status: 500 })
-  } finally {
-    if (db) {
-      await db.close().catch(console.error)
-    }
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

@@ -13,7 +13,7 @@ import SupplementStep from "@/components/steps/supplement-step"
 import { PrizeWheel } from "@/components/steps/prize-wheel"
 import { Confetti } from "@/components/magicui/confetti"
 import type { Database } from "@/lib/supabase/database.types"
-import { useToast } from "@/components/ui/use-toast"
+import { useToast } from "@/hooks/use-toast"
 
 interface FormRendererProps {
   form: any

@@ -27,7 +27,7 @@ import {
   Save,
   Eye,
 } from "lucide-react"
-import { useToast } from "@/components/ui/use-toast"
+import { useToast } from "@/hooks/use-toast"
 import type { FormElementType, FormElement } from "@/components/admin/form-elements"
 
 // Available form elements

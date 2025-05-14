@@ -1,12 +1,10 @@
+import { createServerSupabaseClient } from "@/lib/supabase/server"
+import { hash } from "bcryptjs"
 import { NextResponse } from "next/server"
-import { createAdmin } from "@/lib/auth"
-import { initializeDatabase } from "@/lib/db"
 
 export async function POST(request: Request) {
   try {
-    // Initialize database
-    await initializeDatabase()
-
+    const supabase = createServerSupabaseClient()
     const body = await request.json()
     const { name, email, password } = body
 
@@ -15,13 +13,37 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Name, email, and password are required" }, { status: 400 })
     }
 
+    // Check if admin already exists
+    const { data: existingAdmin } = await supabase
+      .from('admins')
+      .select('*')
+      .eq('email', email)
+      .single()
+
+    if (existingAdmin) {
+      return NextResponse.json({ error: "Admin with this email already exists" }, { status: 400 })
+    }
+
+    // Hash password
+    const hashedPassword = await hash(password, 10)
+
     // Create admin user
-    await createAdmin(name, email, password, "admin")
+    const { error } = await supabase
+      .from('admins')
+      .insert({
+        name,
+        email,
+        password: hashedPassword,
+        role: 'admin'
+      })
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("Error setting up admin:", error)
-    const errorMessage = error instanceof Error ? error.message : "Failed to set up admin user"
-    return NextResponse.json({ error: errorMessage }, { status: 500 })
+    console.error("Error in setup:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

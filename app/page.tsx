@@ -1,10 +1,10 @@
 import { Header } from "@/components/header"
-import { z } from "zod"
+import { Card, CardContent } from "@/components/ui/card"
+import type { Database } from "@/lib/supabase/database.types"
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs"
-import type { Database } from "@/types/supabase"
 import { cookies } from "next/headers"
 import Link from "next/link"
-import { Card, CardContent } from "@/components/ui/card"
+import { z } from "zod"
 
 // Esquema de validação Zod para o formulário
 const formSchema = z.object({

@@ -1,21 +1,25 @@
+import { isAdmin } from "@/lib/auth"
+import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { getDb } from "@/lib/db"
-import { getServerSession } from "next-auth/next"
-import { authOptions } from "@/lib/auth"
 
 export async function GET() {
-  let db = null
   try {
-    const session = await getServerSession(authOptions)
-
-    if (!session) {
+    // Check admin access
+    if (!await isAdmin()) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    db = await getDb()
+    const supabase = createServerSupabaseClient()
 
     // Get all leads
-    const leads = await db.all("SELECT * FROM users")
+    const { data: leads } = await supabase
+      .from('leads')
+      .select('*')
+      .order('created_at')
+
+    if (!leads) {
+      return NextResponse.json({ error: "Failed to fetch leads" }, { status: 500 })
+    }
 
     // Convert to CSV
     const headers = ["id", "email", "whatsapp", "age", "supplements", "status", "created_at"]
@@ -57,9 +61,5 @@ export async function GET() {
   } catch (error) {
     console.error("Error exporting leads:", error)
     return NextResponse.json({ error: "Failed to export leads" }, { status: 500 })
-  } finally {
-    if (db) {
-      await db.close().catch(console.error)
-    }
   }
 }

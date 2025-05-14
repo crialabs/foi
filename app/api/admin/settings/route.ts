@@ -1,9 +1,19 @@
+import { isAdmin } from "@/lib/auth"
+import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { type NextRequest, NextResponse } from "next/server"
-import { db } from "@/lib/db"
 
 export async function GET() {
   try {
-    const settings = await db.get("SELECT * FROM settings LIMIT 1")
+    const supabase = createServerSupabaseClient()
+    const { data: settings, error } = await supabase
+      .from('settings')
+      .select('*')
+      .limit(1)
+      .single()
+
+    if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows returned"
+      throw error
+    }
 
     return NextResponse.json({
       success: true,
@@ -17,59 +27,26 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    // Check admin access
+    if (!await isAdmin()) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     const data = await request.json()
+    const supabase = createServerSupabaseClient()
 
-    // Validate required fields
-    const requiredFields = ["primaryColor", "secondaryColor", "accentColor", "fontFamily"]
-    for (const field of requiredFields) {
-      if (!data[field]) {
-        return NextResponse.json({ success: false, error: `Missing required field: ${field}` }, { status: 400 })
-      }
-    }
-
-    // Check if settings already exist
-    const existingSettings = await db.get("SELECT * FROM settings LIMIT 1")
-
-    if (existingSettings) {
-      // Update existing settings
-      await db.run(
-        `UPDATE settings SET 
-         primaryColor = ?, 
-         secondaryColor = ?, 
-         accentColor = ?, 
-         fontFamily = ?, 
-         logoUrl = ?,
-         updatedAt = CURRENT_TIMESTAMP
-         WHERE id = ?`,
-        [
-          data.primaryColor,
-          data.secondaryColor,
-          data.accentColor,
-          data.fontFamily,
-          data.logoUrl || null,
-          existingSettings.id,
-        ],
-      )
-    } else {
-      // Insert new settings
-      await db.run(
-        `INSERT INTO settings (
-          primaryColor, 
-          secondaryColor, 
-          accentColor, 
-          fontFamily, 
-          logoUrl,
-          createdAt,
-          updatedAt
-        ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-        [data.primaryColor, data.secondaryColor, data.accentColor, data.fontFamily, data.logoUrl || null],
-      )
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: "Settings updated successfully",
+    // Delete existing settings and insert new ones
+    await supabase.from('settings').delete().neq('id', 0) // Clear existing settings
+    const { error } = await supabase.from('settings').insert({
+      ...data,
+      updated_at: new Date().toISOString()
     })
+
+    if (error) {
+      throw error
+    }
+
+    return NextResponse.json({ success: true })
   } catch (error) {
     console.error("Failed to update settings:", error)
     return NextResponse.json({ success: false, error: "Failed to update settings" }, { status: 500 })

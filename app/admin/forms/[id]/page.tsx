@@ -9,7 +9,7 @@ import { Info, Eye, Edit, Download, Share2 } from "lucide-react"
 import { StatsCard } from "@/components/admin/stats-card"
 import { format, formatDistance } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import { useToast } from "@/components/ui/use-toast"
+import { useToast } from "@/hooks/use-toast"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import type { Database } from "@/lib/supabase/database.types"
 

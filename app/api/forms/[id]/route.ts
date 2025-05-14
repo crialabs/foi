@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server"
+import type { Database } from "@/lib/supabase/database.types"
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
 import { cookies } from "next/headers"
-import type { Database } from "@/lib/supabase/database.types"
+import { NextResponse } from "next/server"
 
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {

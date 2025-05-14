@@ -1,87 +1,95 @@
+import { isAdmin } from "@/lib/auth"
+import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { getDb } from "@/lib/db"
-import { getServerSession } from "next-auth/next"
-import { authOptions } from "@/lib/auth"
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
-  let db = null
   try {
-    const session = await getServerSession(authOptions)
-
-    if (!session) {
+    // Check admin access
+    if (!await isAdmin()) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const { id } = params
     const body = await request.json()
+    const supabase = createServerSupabaseClient()
 
-    db = await getDb()
+    // Update prize config
+    const { error } = await supabase
+      .from('prize_configs')
+      .update({
+        name: body.name,
+        description: body.description,
+        probability: body.probability,
+        active: body.active
+      })
+      .eq('id', id)
 
-    // Build update query
-    const updateFields = []
-    const updateValues = []
-
-    if (body.name !== undefined) {
-      updateFields.push("name = ?")
-      updateValues.push(body.name)
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
     }
-
-    if (body.description !== undefined) {
-      updateFields.push("description = ?")
-      updateValues.push(body.description)
-    }
-
-    if (body.probability !== undefined) {
-      updateFields.push("probability = ?")
-      updateValues.push(body.probability)
-    }
-
-    if (body.active !== undefined) {
-      updateFields.push("active = ?")
-      updateValues.push(body.active ? 1 : 0)
-    }
-
-    if (updateFields.length === 0) {
-      return NextResponse.json({ error: "No fields to update" }, { status: 400 })
-    }
-
-    // Update prize
-    await db.run(`UPDATE prize_config SET ${updateFields.join(", ")} WHERE id = ?`, [...updateValues, id])
 
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("Error updating prize:", error)
-    return NextResponse.json({ error: "Failed to update prize" }, { status: 500 })
-  } finally {
-    if (db) {
-      await db.close().catch(console.error)
-    }
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
 
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
-  let db = null
   try {
-    const session = await getServerSession(authOptions)
-
-    if (!session) {
+    // Check admin access
+    if (!await isAdmin()) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const { id } = params
+    const supabase = createServerSupabaseClient()
 
-    db = await getDb()
+    // Delete prize config
+    const { error } = await supabase
+      .from('prize_configs')
+      .delete()
+      .eq('id', id)
 
-    // Delete prize
-    await db.run("DELETE FROM prize_config WHERE id = ?", [id])
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("Error deleting prize:", error)
-    return NextResponse.json({ error: "Failed to delete prize" }, { status: 500 })
-  } finally {
-    if (db) {
-      await db.close().catch(console.error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}
+
+export async function GET(request: Request, { params }: { params: { id: string } }) {
+  try {
+    // Check admin access
+    if (!await isAdmin()) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
+
+    const { id } = params
+    const supabase = createServerSupabaseClient()
+
+    // Get prize config
+    const { data: prize, error } = await supabase
+      .from('prize_configs')
+      .select('*')
+      .eq('id', id)
+      .single()
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    if (!prize) {
+      return NextResponse.json({ error: "Prize not found" }, { status: 404 })
+    }
+
+    return NextResponse.json(prize)
+  } catch (error) {
+    console.error("Error fetching prize:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

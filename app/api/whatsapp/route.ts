@@ -1,5 +1,5 @@
+import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { type NextRequest, NextResponse } from "next/server"
-import { db } from "@/lib/db"
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,11 +11,12 @@ export async function POST(request: NextRequest) {
 
     // Log the message to the database if submissionId is provided
     if (submissionId) {
-      await db.run(`INSERT INTO messages (submissionId, message, direction) VALUES (?, ?, ?)`, [
-        submissionId,
+      const supabase = createServerSupabaseClient()
+      await supabase.from('messages').insert({
+        submission_id: submissionId,
         message,
-        "outgoing",
-      ])
+        direction: 'outgoing'
+      })
     }
 
     return NextResponse.json({

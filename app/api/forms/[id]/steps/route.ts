@@ -1,106 +1,83 @@
+import { isAdmin } from "@/lib/auth"
+import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { getDb } from "@/lib/db"
-import { getServerSession } from "next-auth/next"
-import { authOptions } from "@/lib/auth"
 
 export async function GET(request: Request, { params }: { params: { id: string } }) {
-  let db = null
   try {
     const { id } = params
-
-    db = await getDb()
+    const supabase = createServerSupabaseClient()
 
     // Check if form exists
-    const form = await db.get("SELECT id FROM forms WHERE id = ?", [id])
+    const { data: form, error: formError } = await supabase
+      .from('forms')
+      .select('id')
+      .eq('id', id)
+      .single()
 
-    if (!form) {
+    if (formError || !form) {
       return NextResponse.json({ error: "Form not found" }, { status: 404 })
     }
 
     // Get form steps
-    const steps = await db.all("SELECT * FROM form_steps WHERE form_id = ? ORDER BY order_index ASC", [id])
+    const { data: steps, error: stepsError } = await supabase
+      .from('form_steps')
+      .select('*')
+      .eq('form_id', id)
+      .order('order_index', { ascending: true })
 
-    // Parse content JSON
-    steps.forEach((step: any) => {
-      try {
-        step.content = JSON.parse(step.content)
-      } catch (e) {
-        step.content = []
-      }
-    })
+    if (stepsError) {
+      console.error("Error fetching form steps:", stepsError)
+      return NextResponse.json({ error: "Failed to fetch form steps" }, { status: 500 })
+    }
 
-    return NextResponse.json({ success: true, data: steps })
+    return NextResponse.json({ success: true, data: steps || [] })
   } catch (error) {
     console.error("Error fetching form steps:", error)
-    return NextResponse.json({ error: "Failed to fetch form steps" }, { status: 500 })
-  } finally {
-    if (db) {
-      await db.close().catch(console.error)
-    }
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
-  let db = null
   try {
-    const session = await getServerSession(authOptions)
-
-    if (!session) {
+    // Check admin access
+    if (!await isAdmin()) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const { id } = params
     const body = await request.json()
-
-    db = await getDb()
+    const supabase = createServerSupabaseClient()
 
     // Check if form exists
-    const form = await db.get("SELECT id FROM forms WHERE id = ?", [id])
+    const { data: form, error: formError } = await supabase
+      .from('forms')
+      .select('id')
+      .eq('id', id)
+      .single()
 
-    if (!form) {
+    if (formError || !form) {
       return NextResponse.json({ error: "Form not found" }, { status: 404 })
     }
 
-    // Get current highest order index
-    const maxOrderResult = await db.get("SELECT MAX(order_index) as maxOrder FROM form_steps WHERE form_id = ?", [id])
+    // Insert new step
+    const { error: insertError } = await supabase
+      .from('form_steps')
+      .insert({
+        form_id: id,
+        title: body.title || 'New Step',
+        description: body.description || '',
+        content: JSON.stringify(body.content || []),
+        order_index: body.order_index || 0
+      })
 
-    const nextOrder = maxOrderResult.maxOrder !== null ? maxOrderResult.maxOrder + 1 : 0
+    if (insertError) {
+      console.error("Error creating form step:", insertError)
+      return NextResponse.json({ error: "Failed to create form step" }, { status: 500 })
+    }
 
-    // Create new step
-    const result = await db.run(
-      `
-      INSERT INTO form_steps (
-        form_id,
-        title,
-        description,
-        order_index,
-        content,
-        updated_at
-      ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `,
-      [
-        id,
-        body.title || `Step ${nextOrder + 1}`,
-        body.description || "",
-        nextOrder,
-        typeof body.content === "string" ? body.content : JSON.stringify(body.content || []),
-      ],
-    )
-
-    // Update form's updated_at timestamp
-    await db.run("UPDATE forms SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", [id])
-
-    return NextResponse.json({
-      success: true,
-      stepId: result.lastID,
-      message: "Step created successfully",
-    })
+    return NextResponse.json({ success: true })
   } catch (error) {
     console.error("Error creating form step:", error)
-    return NextResponse.json({ error: "Failed to create form step" }, { status: 500 })
-  } finally {
-    if (db) {
-      await db.close().catch(console.error)
-    }
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

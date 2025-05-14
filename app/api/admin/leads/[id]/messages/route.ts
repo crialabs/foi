@@ -1,47 +1,65 @@
+import { isAdmin } from "@/lib/auth"
+import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { getDb } from "@/lib/db"
-import { getServerSession } from "next-auth/next"
-import { authOptions } from "@/lib/auth"
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
-  let db = null
   try {
-    const session = await getServerSession(authOptions)
-
-    if (!session) {
+    // Check admin access
+    if (!await isAdmin()) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const { id } = params
     const { message } = await request.json()
+    const supabase = createServerSupabaseClient()
 
-    db = await getDb()
+    // Record the message
+    const { error } = await supabase
+      .from('messages')
+      .insert({
+        submission_id: id,
+        message,
+        direction: 'outgoing',
+        created_at: new Date().toISOString()
+      })
 
-    // Create messages table if it doesn't exist
-    await db.exec(`
-      CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        message TEXT NOT NULL,
-        sent_by TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users (id)
-      )
-    `)
-
-    // Insert message
-    await db.run("INSERT INTO messages (user_id, message, sent_by) VALUES (?, ?, ?)", [id, message, "admin"])
-
-    // Update lead status to contacted
-    await db.run("UPDATE users SET status = 'contacted' WHERE id = ? AND status = 'new'", [id])
+    if (error) {
+      console.error("Error creating message:", error)
+      return NextResponse.json({ error: "Failed to create message" }, { status: 500 })
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("Error sending message:", error)
-    return NextResponse.json({ error: "Failed to send message" }, { status: 500 })
-  } finally {
-    if (db) {
-      await db.close().catch(console.error)
+    console.error("Error creating message:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}
+
+export async function GET(request: Request, { params }: { params: { id: string } }) {
+  try {
+    // Check admin access
+    if (!await isAdmin()) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
+
+    const { id } = params
+    const supabase = createServerSupabaseClient()
+
+    // Get messages for this submission
+    const { data: messages, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('submission_id', id)
+      .order('created_at', { ascending: true })
+
+    if (error) {
+      console.error("Error fetching messages:", error)
+      return NextResponse.json({ error: "Failed to fetch messages" }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true, data: messages || [] })
+  } catch (error) {
+    console.error("Error fetching messages:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

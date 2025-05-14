@@ -1,36 +1,34 @@
+import { isAdmin } from "@/lib/auth"
+import { createServerSupabaseClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { getDb } from "@/lib/db"
-import { getServerSession } from "next-auth/next"
-import { authOptions } from "@/lib/auth"
 
 export async function POST(request: Request) {
-  let db = null
   try {
-    const session = await getServerSession(authOptions)
-
-    if (!session) {
+    // Check admin access
+    if (!await isAdmin()) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const body = await request.json()
-
-    db = await getDb()
+    const supabase = createServerSupabaseClient()
 
     // Insert new prize
-    await db.run("INSERT INTO prize_config (name, description, probability, active) VALUES (?, ?, ?, ?)", [
-      body.name,
-      body.description,
-      body.probability,
-      body.active ? 1 : 0,
-    ])
+    const { error } = await supabase
+      .from('prize_configs')
+      .insert({
+        name: body.name,
+        description: body.description,
+        probability: body.probability,
+        active: body.active
+      })
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("Error creating prize:", error)
-    return NextResponse.json({ error: "Failed to create prize" }, { status: 500 })
-  } finally {
-    if (db) {
-      await db.close().catch(console.error)
-    }
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

@@ -1,8 +1,8 @@
 "use client"
 
+import { BarChart, FileText, Gift, Home, LogOut, Palette, Settings, Users } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { BarChart, Users, Gift, Settings, Palette, FileText, Home, LogOut } from "lucide-react"
 
 const navItems = [
   {
@@ -59,11 +59,10 @@ export function AdminNav() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center px-3 py-2 text-sm rounded-md ${
-                pathname === item.href
+              className={`flex items-center px-3 py-2 text-sm rounded-md ${pathname === item.href
                   ? "text-gray-900 bg-gray-100 font-medium"
                   : "text-gray-500 hover:text-gray-900 hover:bg-gray-100"
-              }`}
+                }`}
             >
               <item.icon className="mr-3 h-4 w-4" />
               <span>{item.title}</span>
